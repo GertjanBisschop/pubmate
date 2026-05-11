@@ -69,9 +69,10 @@ def cli(
             if not label_value:
                 raise ValueError(f"Entity at index {i} has no '{preflabel}' value: {entity}")
 
-            # Keep existing valid IDs unless forced
+            # Keep existing valid URIs unless forced. They may have been minted with
+            # another strategy, another namespace, or outside PubMate entirely.
             if current_id and not force:
-                if id_generator.is_valid_id(current_id, method=method):
+                if id_generator.is_valid_uri(current_id):
                     id_generator.register_id(current_id)
                     logger.debug(f"Keeping existing ID: {current_id}")
                     continue

@@ -25,6 +25,21 @@ def test_generate_id_hash_retries_with_salt_when_collision() -> None:
     assert second.startswith("https://example.org/")
 
 
+def test_is_valid_uri_accepts_absolute_uris_without_requiring_minting_pattern() -> None:
+    generator = IdentifierGenerator(namespace="https://example.org/terms/")
+
+    assert generator.is_valid_uri("https://example.org/terms/alpha")
+    assert not generator.is_valid_id("https://example.org/terms/alpha", method="ulid")
+
+
+def test_is_valid_uri_rejects_relative_or_malformed_values() -> None:
+    generator = IdentifierGenerator(namespace="https://example.org/terms/")
+
+    assert not generator.is_valid_uri("alpha")
+    assert not generator.is_valid_uri("https://")
+    assert not generator.is_valid_uri("https://example.org/terms/has space")
+
+
 def test_generate_id_raises_runtimeerror_when_attempts_exhausted() -> None:
     generator = IdentifierGenerator(namespace="https://example.org/")
 

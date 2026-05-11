@@ -5,6 +5,7 @@ import re
 import json
 
 from typing import Optional, Set
+from urllib.parse import urlsplit
 from ulid import ULID, constants
 from uuid import uuid4
 
@@ -33,6 +34,20 @@ class IdentifierGenerator:
         if key.startswith(self.namespace):
             return True
         return False
+
+    def is_valid_uri(self, key: str) -> bool:
+        if not isinstance(key, str):
+            return False
+        if re.search(r"[\x00-\x20]", key):
+            return False
+
+        parsed = urlsplit(key)
+        if not parsed.scheme:
+            return False
+        if parsed.scheme in {"http", "https"} and not parsed.netloc:
+            return False
+
+        return True
 
     def is_valid_id(self, key: str, method: str = "ulid") -> bool:
         # Check if key starts with namespace
