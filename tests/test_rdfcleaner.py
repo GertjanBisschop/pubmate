@@ -3,7 +3,12 @@ from pathlib import Path
 import rdflib
 from rdflib.namespace import OWL, RDF, RDFS
 
-from pubmate.rdfcleaner import clean_graph, split_into_assertions
+from pubmate.rdfcleaner import (
+    clean_graph,
+    split_into_assertions,
+    split_subjects_into_assertions,
+    subjects_from_predicates,
+)
 
 
 FIXTURE = Path(__file__).parent / "input" / "resources.ttl"
@@ -24,6 +29,12 @@ def _read_resources() -> rdflib.Graph:
 def _read_no_translations() -> rdflib.Graph:
     graph = rdflib.Graph()
     graph.parse(NO_TRANSLATIONS_FIXTURE)
+    return graph
+
+
+def _read_example_graph(data: str) -> rdflib.Graph:
+    graph = rdflib.Graph()
+    graph.parse(data=data, format="turtle")
     return graph
 
 
@@ -121,3 +132,110 @@ def test_cleaned_split_assertion_without_translations_contains_matrix_statements
         (MATRIX, SCHEMA.description, rdflib.Literal("This is just an example matrix")),
         (MATRIX, RDFS.subClassOf, MATRIX_PARENT),
     }
+
+
+def test_split_subjects_into_assertions_extracts_explicit_subject() -> None:
+    graph = _read_example_graph(
+        """
+        @prefix ex: <https://example.org/> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+        ex:child a owl:Class ;
+            rdfs:label "Child" ;
+            rdfs:subClassOf ex:parent .
+
+        ex:anotherChild a owl:Class ;
+            rdfs:label "AnotherChild" ;
+            rdfs:subClassOf ex:parent .
+        """
+    )
+
+    assertions = list(split_subjects_into_assertions(graph, ["ex:child"]))
+
+    assert len(assertions) == 1
+    term_id, assertion = assertions[0]
+    assert term_id == "child"
+    assert (rdflib.URIRef("https://example.org/child"), RDFS.label, rdflib.Literal("Child")) in assertion
+    assert (
+        rdflib.URIRef("https://example.org/child"),
+        RDFS.subClassOf,
+        rdflib.URIRef("https://example.org/parent"),
+    ) in assertion
+
+
+def test_subjects_from_predicates_extracts_iri_objects() -> None:
+    graph = _read_example_graph(
+        """
+        @prefix ex: <https://example.org/> .
+        @prefix pehterms: <https://w3id.org/peh/terms/> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+        [] a pehterms:EntityList ;
+            pehterms:hasMatrixSubclass ex:child .
+
+        ex:child a owl:Class ;
+            rdfs:label "Child" ;
+            rdfs:subClassOf ex:parent .
+        """
+    )
+
+    subjects = list(subjects_from_predicates(graph, ["pehterms:hasMatrixSubclass"]))
+    assertions = dict(split_subjects_into_assertions(graph, subjects))
+
+    assert subjects == [rdflib.URIRef("https://example.org/child")]
+    assert set(assertions) == {"child"}
+    assert (rdflib.URIRef("https://example.org/child"), RDFS.label, rdflib.Literal("Child")) in assertions["child"]
+
+
+def test_subjects_from_predicates_ignores_non_iri_objects() -> None:
+    graph = _read_example_graph(
+        """
+        @prefix ex: <https://example.org/> .
+        @prefix pehterms: <https://w3id.org/peh/terms/> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+        [] a pehterms:EntityList ;
+            pehterms:hasMatrixSubclass ex:child, "not an IRI", [
+                rdfs:label "Blank node"
+            ] .
+
+        ex:child a owl:Class ;
+            rdfs:label "Child" ;
+            rdfs:subClassOf ex:parent .
+        """
+    )
+
+    subjects = list(subjects_from_predicates(graph, ["pehterms:hasMatrixSubclass"]))
+
+    assert subjects == [rdflib.URIRef("https://example.org/child")]
+
+
+def test_split_subjects_into_assertions_deduplicates_and_skips_missing_subjects() -> None:
+    graph = _read_example_graph(
+        """
+        @prefix ex: <https://example.org/> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+        ex:child a owl:Class ;
+            rdfs:label "Child" ;
+            rdfs:subClassOf ex:parent .
+        """
+    )
+
+    assertions = list(
+        split_subjects_into_assertions(
+            graph,
+            [
+                "ex:child",
+                rdflib.URIRef("https://example.org/child"),
+                "https://example.org/missing",
+            ],
+        )
+    )
+
+    assert len(assertions) == 1
+    assert assertions[0][0] == "child"

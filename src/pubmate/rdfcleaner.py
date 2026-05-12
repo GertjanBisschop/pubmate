@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Generator, Tuple
 
 import rdflib
@@ -105,6 +106,21 @@ def serialize_graph(g: rdflib.Graph, output_path: str) -> None:
 # ------------------------------------------------------------
 # Assertion splitting
 # ------------------------------------------------------------
+def expand_iri_or_curie(g: rdflib.Graph, value: str | rdflib.URIRef) -> rdflib.URIRef:
+    if isinstance(value, rdflib.URIRef):
+        return value
+
+    try:
+        return rdflib.URIRef(g.namespace_manager.expand_curie(value))
+    except Exception:
+        return rdflib.URIRef(value)
+
+
+def _term_id(subject: rdflib.URIRef) -> str:
+    subject_str = str(subject)
+    return subject_str.split("#")[-1] if "#" in subject_str else subject_str.split("/")[-1]
+
+
 def _copy_subject_description(
     source: rdflib.Graph,
     target: rdflib.Graph,
@@ -124,27 +140,74 @@ def _copy_subject_description(
             _copy_subject_description(source, target, obj, visited)
 
 
+def _new_assertion_graph(g: rdflib.Graph) -> rdflib.Graph:
+    assertion_graph = rdflib.Graph()
+    for prefix, namespace in g.namespaces():
+        assertion_graph.bind(prefix, namespace)
+    return assertion_graph
+
+
+def subjects_from_predicates(
+    g: rdflib.Graph,
+    predicates: Iterable[str | rdflib.URIRef],
+) -> Generator[rdflib.URIRef, None, None]:
+    seen: set[rdflib.URIRef] = set()
+
+    for predicate_value in predicates:
+        predicate = expand_iri_or_curie(g, predicate_value)
+        logger.info(f"Finding subjects listed by predicate {predicate}")
+
+        for _, _, subject in g.triples((None, predicate, None)):
+            if not isinstance(subject, rdflib.URIRef):
+                logger.warning(f"Ignoring non-IRI object selected by {predicate}: {subject}")
+                continue
+
+            if subject in seen:
+                continue
+
+            seen.add(subject)
+            yield subject
+
+
+def split_subjects_into_assertions(
+    g: rdflib.Graph,
+    subjects: Iterable[str | rdflib.URIRef],
+) -> Generator[Tuple[str, rdflib.Graph], None, None]:
+    seen: set[rdflib.URIRef] = set()
+
+    for subject_value in subjects:
+        subject = expand_iri_or_curie(g, subject_value)
+
+        if subject in seen:
+            continue
+        seen.add(subject)
+
+        if not list(g.triples((subject, None, None))):
+            logger.warning(f"Skipping selected subject with no triples in graph: {subject}")
+            continue
+
+        term_id = _term_id(subject)
+        logger.info(f"Creating assertion graph for {term_id}")
+
+        assertion_graph = _new_assertion_graph(g)
+        _copy_subject_description(g, assertion_graph, subject, set())
+
+        yield term_id, assertion_graph
+
+
 def split_into_assertions(
     g: rdflib.Graph,
     all_classes: set[str],
 ) -> Generator[Tuple[str, rdflib.Graph], None, None]:
+    subjects: list[rdflib.URIRef] = []
+
     for clss in all_classes:
-        try:
-            parent = g.namespace_manager.expand_curie(clss)
-        except Exception:
-            parent = rdflib.URIRef(clss)
+        parent = expand_iri_or_curie(g, clss)
 
         logger.info(f"Finding direct subclasses of {parent}")
 
         for subclass, _, _ in g.triples((None, RDFS.subClassOf, parent)):
-            term_id = subclass.split("#")[-1] if "#" in subclass else subclass.split("/")[-1]
+            if isinstance(subclass, rdflib.URIRef):
+                subjects.append(subclass)
 
-            logger.info(f"Creating assertion graph for {term_id}")
-
-            assertion_graph = rdflib.Graph()
-            for prefix, namespace in g.namespaces():
-                assertion_graph.bind(prefix, namespace)
-
-            _copy_subject_description(g, assertion_graph, subclass, set())
-
-            yield term_id, assertion_graph
+    yield from split_subjects_into_assertions(g, subjects)
