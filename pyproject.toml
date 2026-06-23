@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1.8",
-    "nanopub>=2.1.0",
+    "nanopub>=2.2.2",
     "python-ulid>=3.1.0",
 ]
 
@@ -22,8 +22,10 @@ dev = [
 
 [project.scripts]
 pubmate-cleanrdf = "pubmate.cli.cleanrdf:cli"
+pubmate-extract-assertions = "pubmate.cli.extract_assertions:cli"
 pubmate-mint = "pubmate.cli.mint:cli"
-pubmate-publish = "pubmate.cli.publish:cli"
+pubmate-mint-publish = "pubmate.cli.mint_publish:cli"
+pubmate-validate-defining = "pubmate.cli.validate_defining:cli"
 pubmate-yamlconcat = "pubmate.cli.yamlconcat:cli"
 
 [tool.hatch.build.targets.sdist]
