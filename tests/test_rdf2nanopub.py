@@ -80,10 +80,11 @@ def test_sign_publish_materialized_posts_validated_trig(monkeypatch: pytest.Monk
         def raise_for_status(self) -> None:
             return None
 
-    def fake_post(url: str, *, headers: dict[str, str], data: bytes) -> DummyResponse:
+    def fake_post(url: str, *, headers: dict[str, str], data: bytes, timeout: int) -> DummyResponse:
         captured["url"] = url
         captured["headers"] = headers
         captured["data"] = data
+        captured["timeout"] = timeout
         return DummyResponse()
 
     monkeypatch.setattr("pubmate.rdf2nanopub.requests.post", fake_post)
@@ -101,5 +102,6 @@ def test_sign_publish_materialized_posts_validated_trig(monkeypatch: pytest.Monk
 
     assert captured["headers"] == {"Content-Type": "application/trig"}
     assert captured["data"] == artifact.trig.encode("utf-8")
+    assert captured["timeout"] == 30
     assert str(captured["url"]).startswith("https://")
     assert np.published is True

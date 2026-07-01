@@ -14,6 +14,8 @@ from pubmate.utils import NanopubArtifact, materialize_nanopub
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+PUBLISH_TIMEOUT_SECONDS = 30
+
 
 def _publish_artifact(np: "nanopub.Nanopub", artifact: NanopubArtifact) -> None:
     """Publish the exact TriG artifact that was validated locally."""
@@ -23,6 +25,7 @@ def _publish_artifact(np: "nanopub.Nanopub", artifact: NanopubArtifact) -> None:
         use_server,
         headers={"Content-Type": "application/trig"},
         data=artifact.trig.encode("utf-8"),
+        timeout=PUBLISH_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     np.published = True
